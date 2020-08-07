@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/sha1"
 	"encoding/gob"
-	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -32,6 +31,21 @@ func NewCache(store persistence.CacheStore) *cache {
 	return &cache{
 		store: store,
 	}
+}
+
+func NewMemoryCache(expire time.Duration) *cache {
+	store := persistence.NewInMemoryStore(expire)
+	return NewCache(store)
+}
+
+func NewRedisCache(host string, password string, defaultExpiration time.Duration) *cache {
+	store := persistence.NewRedisCache(host, password, defaultExpiration)
+	return NewCache(store)
+}
+
+func NewMemcached(hostList []string, defaultExpiration time.Duration) *cache {
+	store := persistence.NewMemcachedStore(hostList, defaultExpiration)
+	return NewCache(store)
 }
 
 type responseCache struct {
@@ -155,7 +169,8 @@ func (ch *cache) SiteCache(expire time.Duration) gin.HandlerFunc {
 					c.Writer.Header().Set(k, v)
 				}
 			}
-			//c.Writer.Write(cache.Data)
+			c.Writer.Write(cache.Data)
+			c.Abort()
 		}
 	}
 }
@@ -170,7 +185,6 @@ func (ch *cache) CachePage(expire time.Duration) gin.HandlerFunc {
 			if err != persistence.ErrCacheMiss {
 				log.Println(err.Error())
 			}
-			fmt.Println("BBBBBBBBBBBBBBBBBBBBB	")
 			// replace writer
 			writer := newCachedWriter(ch.store, expire, c.Writer, key)
 			c.Writer = writer
@@ -186,8 +200,8 @@ func (ch *cache) CachePage(expire time.Duration) gin.HandlerFunc {
 					c.Writer.Header().Set(k, v)
 				}
 			}
-			fmt.Println("AAAAAAAAAAAAAAAA")
-			//c.Writer.Write(cache.Data)
+			c.Writer.Write(cache.Data)
+			c.Abort()
 		}
 	}
 }
@@ -212,7 +226,8 @@ func (ch *cache) CachePageWithoutQuery(expire time.Duration) gin.HandlerFunc {
 					c.Writer.Header().Set(k, v)
 				}
 			}
-			//c.Writer.Write(cache.Data)
+			c.Writer.Write(cache.Data)
+			c.Abort()
 		}
 	}
 }
@@ -248,7 +263,8 @@ func (ch *cache) CachePageWithoutHeader(expire time.Duration) gin.HandlerFunc {
 			}
 		} else {
 			c.Writer.WriteHeader(cache.Status)
-			//c.Writer.Write(cache.Data)
+			c.Writer.Write(cache.Data)
+			c.Abort()
 		}
 	}
 }
