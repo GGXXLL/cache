@@ -1,13 +1,13 @@
 package cache
 
 import (
+	"bytes"
+	"encoding/gob"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
-	"encoding/gob"
-	"bytes"
 
 	"github.com/gin-contrib/cache/persistence"
 	"github.com/gin-gonic/gin"
@@ -40,15 +40,18 @@ func TestWrite(t *testing.T) {
 
 func TestCachePage(t *testing.T) {
 	store := persistence.NewInMemoryStore(60 * time.Second)
+	ch := NewCache(store)
 
 	router := gin.New()
-	router.GET("/cache_ping", CachePage(store, time.Second*3, func(c *gin.Context) {
+	router.Use(ch.CachePage(time.Second * 3))
+	router.GET("/cache_ping", func(c *gin.Context) {
 		c.String(200, "pong "+fmt.Sprint(time.Now().UnixNano()))
-	}))
+	})
 
 	w1 := performRequest("GET", "/cache_ping", router)
 	w2 := performRequest("GET", "/cache_ping", router)
-
+	fmt.Println(w1.Body.String())
+	fmt.Println(w2.Body.String())
 	assert.Equal(t, 200, w1.Code)
 	assert.Equal(t, 200, w2.Code)
 	assert.Equal(t, w1.Body.String(), w2.Body.String())
@@ -56,11 +59,12 @@ func TestCachePage(t *testing.T) {
 
 func TestCachePageExpire(t *testing.T) {
 	store := persistence.NewInMemoryStore(60 * time.Second)
+	ch := NewCache(store)
 
 	router := gin.New()
-	router.GET("/cache_ping", CachePage(store, time.Second, func(c *gin.Context) {
+	router.GET("/cache_ping", ch.CachePage(time.Second), func(c *gin.Context) {
 		c.String(200, "pong "+fmt.Sprint(time.Now().UnixNano()))
-	}))
+	})
 
 	w1 := performRequest("GET", "/cache_ping", router)
 	time.Sleep(time.Second * 2)
@@ -75,11 +79,12 @@ func TestCachePageAtomic(t *testing.T) {
 	// memoryDelayStore is a wrapper of a InMemoryStore
 	// designed to simulate data race (by doing a delayed write)
 	store := newDelayStore(60 * time.Second)
+	ch := NewCache(store)
 
 	router := gin.New()
-	router.GET("/atomic", CachePageAtomic(store, time.Second*5, func(c *gin.Context) {
+	router.GET("/atomic", ch.CachePageAtomic(time.Second*5), func(c *gin.Context) {
 		c.String(200, "OK")
-	}))
+	})
 
 	outp := make(chan string, 10)
 
@@ -106,11 +111,12 @@ func TestCachePageAtomic(t *testing.T) {
 
 func TestCachePageWithoutHeader(t *testing.T) {
 	store := persistence.NewInMemoryStore(60 * time.Second)
+	ch := NewCache(store)
 
 	router := gin.New()
-	router.GET("/cache_ping", CachePageWithoutHeader(store, time.Second*3, func(c *gin.Context) {
+	router.GET("/cache_ping", ch.CachePageWithoutHeader(time.Second*3), func(c *gin.Context) {
 		c.String(200, "pong "+fmt.Sprint(time.Now().UnixNano()))
-	}))
+	})
 
 	w1 := performRequest("GET", "/cache_ping", router)
 	w2 := performRequest("GET", "/cache_ping", router)
@@ -124,11 +130,12 @@ func TestCachePageWithoutHeader(t *testing.T) {
 
 func TestCachePageWithoutHeaderExpire(t *testing.T) {
 	store := persistence.NewInMemoryStore(60 * time.Second)
+	ch := NewCache(store)
 
 	router := gin.New()
-	router.GET("/cache_ping", CachePage(store, time.Second, func(c *gin.Context) {
+	router.GET("/cache_ping", ch.CachePage(time.Second), func(c *gin.Context) {
 		c.String(200, "pong "+fmt.Sprint(time.Now().UnixNano()))
-	}))
+	})
 
 	w1 := performRequest("GET", "/cache_ping", router)
 	time.Sleep(time.Second * 2)
@@ -143,12 +150,12 @@ func TestCachePageWithoutHeaderExpire(t *testing.T) {
 
 func TestCacheHtmlFile(t *testing.T) {
 	store := persistence.NewInMemoryStore(60 * time.Second)
-
+	ch := NewCache(store)
 	router := gin.New()
 	router.LoadHTMLFiles("example/template.html")
-	router.GET("/cache_html", CachePage(store, time.Second*3, func(c *gin.Context) {
+	router.GET("/cache_html", ch.CachePage(time.Second*3), func(c *gin.Context) {
 		c.HTML(http.StatusOK, "template.html", gin.H{"values": fmt.Sprint(time.Now().UnixNano())})
-	}))
+	})
 
 	w1 := performRequest("GET", "/cache_html", router)
 	w2 := performRequest("GET", "/cache_html", router)
@@ -160,12 +167,12 @@ func TestCacheHtmlFile(t *testing.T) {
 
 func TestCacheHtmlFileExpire(t *testing.T) {
 	store := persistence.NewInMemoryStore(60 * time.Second)
-
+	ch := NewCache(store)
 	router := gin.New()
 	router.LoadHTMLFiles("example/template.html")
-	router.GET("/cache_html", CachePage(store, time.Second*1, func(c *gin.Context) {
+	router.GET("/cache_html", ch.CachePage(time.Second*1), func(c *gin.Context) {
 		c.HTML(http.StatusOK, "template.html", gin.H{"values": fmt.Sprint(time.Now().UnixNano())})
-	}))
+	})
 
 	w1 := performRequest("GET", "/cache_html", router)
 	time.Sleep(time.Second * 2)
@@ -178,11 +185,11 @@ func TestCacheHtmlFileExpire(t *testing.T) {
 
 func TestCachePageAborted(t *testing.T) {
 	store := persistence.NewInMemoryStore(60 * time.Second)
-
+	ch := NewCache(store)
 	router := gin.New()
-	router.GET("/cache_aborted", CachePage(store, time.Second*3, func(c *gin.Context) {
+	router.GET("/cache_aborted", ch.CachePage(time.Second*3), func(c *gin.Context) {
 		c.AbortWithStatusJSON(200, map[string]int64{"time": time.Now().UnixNano()})
-	}))
+	})
 
 	w1 := performRequest("GET", "/cache_aborted", router)
 	time.Sleep(time.Millisecond * 500)
@@ -195,11 +202,11 @@ func TestCachePageAborted(t *testing.T) {
 
 func TestCachePage400(t *testing.T) {
 	store := persistence.NewInMemoryStore(60 * time.Second)
-
+	ch := NewCache(store)
 	router := gin.New()
-	router.GET("/cache_400", CachePage(store, time.Second*3, func(c *gin.Context) {
+	router.GET("/cache_400", ch.CachePage(time.Second*3), func(c *gin.Context) {
 		c.String(400, fmt.Sprint(time.Now().UnixNano()))
-	}))
+	})
 
 	w1 := performRequest("GET", "/cache_400", router)
 	time.Sleep(time.Millisecond * 500)
@@ -212,11 +219,11 @@ func TestCachePage400(t *testing.T) {
 
 func TestCachePageWithoutHeaderAborted(t *testing.T) {
 	store := persistence.NewInMemoryStore(60 * time.Second)
-
+	ch := NewCache(store)
 	router := gin.New()
-	router.GET("/cache_aborted", CachePage(store, time.Second*3, func(c *gin.Context) {
+	router.GET("/cache_aborted", ch.CachePage(time.Second*3), func(c *gin.Context) {
 		c.AbortWithStatusJSON(200, map[string]int64{"time": time.Now().UnixNano()})
-	}))
+	})
 
 	w1 := performRequest("GET", "/cache_aborted", router)
 	time.Sleep(time.Millisecond * 500)
@@ -231,11 +238,11 @@ func TestCachePageWithoutHeaderAborted(t *testing.T) {
 
 func TestCachePageWithoutHeader400(t *testing.T) {
 	store := persistence.NewInMemoryStore(60 * time.Second)
-
+	ch := NewCache(store)
 	router := gin.New()
-	router.GET("/cache_400", CachePage(store, time.Second*3, func(c *gin.Context) {
+	router.GET("/cache_400", ch.CachePage(time.Second*3), func(c *gin.Context) {
 		c.String(400, fmt.Sprint(time.Now().UnixNano()))
-	}))
+	})
 
 	w1 := performRequest("GET", "/cache_400", router)
 	time.Sleep(time.Millisecond * 500)
@@ -250,11 +257,11 @@ func TestCachePageWithoutHeader400(t *testing.T) {
 
 func TestCachePageStatus207(t *testing.T) {
 	store := persistence.NewInMemoryStore(60 * time.Second)
-
+	ch := NewCache(store)
 	router := gin.New()
-	router.GET("/cache_207", CachePage(store, time.Second*3, func(c *gin.Context) {
+	router.GET("/cache_207", ch.CachePage(time.Second*3), func(c *gin.Context) {
 		c.String(207, fmt.Sprint(time.Now().UnixNano()))
-	}))
+	})
 
 	w1 := performRequest("GET", "/cache_207", router)
 	time.Sleep(time.Millisecond * 500)
@@ -267,11 +274,11 @@ func TestCachePageStatus207(t *testing.T) {
 
 func TestCachePageWithoutQuery(t *testing.T) {
 	store := persistence.NewInMemoryStore(60 * time.Second)
-
+	ch := NewCache(store)
 	router := gin.New()
-	router.GET("/cache_without_query", CachePageWithoutQuery(store, time.Second*3, func(c *gin.Context) {
+	router.GET("/cache_without_query", ch.CachePageWithoutQuery(time.Second*3), func(c *gin.Context) {
 		c.String(200, "pong "+fmt.Sprint(time.Now().UnixNano()))
-	}))
+	})
 
 	w1 := performRequest("GET", "/cache_without_query?foo=1", router)
 	w2 := performRequest("GET", "/cache_without_query?foo=2", router)
@@ -283,17 +290,17 @@ func TestCachePageWithoutQuery(t *testing.T) {
 
 func TestRegisterResponseCacheGob(t *testing.T) {
 	RegisterResponseCacheGob()
-	r := responseCache{Status:200, Data: []byte("test"),}
+	r := responseCache{Status: 200, Data: []byte("test")}
 	mCache := new(bytes.Buffer)
 	encCache := gob.NewEncoder(mCache)
 	err := encCache.Encode(r)
 	assert.Nil(t, err)
-	
+
 	var decodedResp responseCache
 	pCache := bytes.NewBuffer(mCache.Bytes())
 	decCache := gob.NewDecoder(pCache)
 	err = decCache.Decode(&decodedResp)
-	assert.Nil(t,err)
+	assert.Nil(t, err)
 
 }
 func performRequest(method, target string, router *gin.Engine) *httptest.ResponseRecorder {
