@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	CACHE_MIDDLEWARE_KEY = "gincontrib.cache"
+	MiddlewareKey = "gincontrib.cache"
 )
 
 var (
@@ -24,7 +24,30 @@ var (
 )
 
 type cache struct {
-	store persistence.CacheStore
+	store            persistence.CacheStore
+	excludeQueryArgs []string // just support GET request
+}
+
+func (ch *cache) SetExcludeQueryArgs(values ...string) {
+	ch.excludeQueryArgs = append(ch.excludeQueryArgs, values...)
+}
+
+func (ch *cache) parseUrl(u *url.URL) *url.URL {
+	if len(ch.excludeQueryArgs) > 0 {
+		q := u.Query()
+		for _, v := range ch.excludeQueryArgs {
+			q.Del(v)
+		}
+		u.RawQuery = q.Encode()
+	}
+	return u
+}
+
+func (ch *cache) validResponse(method string, code int) bool {
+	if method != "GET" || code != 0 {
+		return false
+	}
+	return true
 }
 
 func NewCache(store persistence.CacheStore) *cache {
@@ -150,26 +173,26 @@ func (w *cachedWriter) WriteString(data string) (n int, err error) {
 // Cache Middleware
 func (ch *cache) Cache() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.Set(CACHE_MIDDLEWARE_KEY, ch.store)
+		c.Set(MiddlewareKey, ch.store)
 		c.Next()
 	}
 }
 
 func (ch *cache) SiteCache(expire time.Duration) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		var cache responseCache
-		url := c.Request.URL
-		key := CreateKey(url.RequestURI())
-		if err := ch.store.Get(key, &cache); err != nil {
+		var repCache responseCache
+		u := ch.parseUrl(c.Request.URL)
+		key := CreateKey(u.RequestURI())
+		if err := ch.store.Get(key, &repCache); err != nil {
 			c.Next()
 		} else {
-			c.Writer.WriteHeader(cache.Status)
-			for k, vals := range cache.Header {
+			c.Writer.WriteHeader(repCache.Status)
+			for k, vals := range repCache.Header {
 				for _, v := range vals {
 					c.Writer.Header().Set(k, v)
 				}
 			}
-			c.Writer.Write(cache.Data)
+			c.Writer.Write(repCache.Data)
 			c.Abort()
 		}
 	}
@@ -178,10 +201,10 @@ func (ch *cache) SiteCache(expire time.Duration) gin.HandlerFunc {
 // CachePage Decorator
 func (ch *cache) CachePage(expire time.Duration) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		var cache responseCache
-		url := c.Request.URL
-		key := CreateKey(url.RequestURI())
-		if err := ch.store.Get(key, &cache); err != nil {
+		var repCache responseCache
+		u := ch.parseUrl(c.Request.URL)
+		key := CreateKey(u.RequestURI())
+		if err := ch.store.Get(key, &repCache); err != nil {
 			if err != persistence.ErrCacheMiss {
 				log.Println(err.Error())
 			}
@@ -194,39 +217,13 @@ func (ch *cache) CachePage(expire time.Duration) gin.HandlerFunc {
 				ch.store.Delete(key)
 			}
 		} else {
-			c.Writer.WriteHeader(cache.Status)
-			for k, vals := range cache.Header {
+			c.Writer.WriteHeader(repCache.Status)
+			for k, vals := range repCache.Header {
 				for _, v := range vals {
 					c.Writer.Header().Set(k, v)
 				}
 			}
-			c.Writer.Write(cache.Data)
-			c.Abort()
-		}
-	}
-}
-
-// CachePageWithoutQuery add ability to ignore GET query parameters.
-func (ch *cache) CachePageWithoutQuery(expire time.Duration) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		var cache responseCache
-		key := CreateKey(c.Request.URL.Path)
-		if err := ch.store.Get(key, &cache); err != nil {
-			if err != persistence.ErrCacheMiss {
-				log.Println(err.Error())
-			}
-			// replace writer
-			writer := newCachedWriter(ch.store, expire, c.Writer, key)
-			c.Writer = writer
-			c.Next()
-		} else {
-			c.Writer.WriteHeader(cache.Status)
-			for k, vals := range cache.Header {
-				for _, v := range vals {
-					c.Writer.Header().Set(k, v)
-				}
-			}
-			c.Writer.Write(cache.Data)
+			c.Writer.Write(repCache.Data)
 			c.Abort()
 		}
 	}
@@ -243,12 +240,39 @@ func (ch *cache) CachePageAtomic(expire time.Duration) gin.HandlerFunc {
 	}
 }
 
+// CachePageWithoutQuery add ability to ignore GET query parameters.
+func (ch *cache) CachePageWithoutQuery(expire time.Duration) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var repCache responseCache
+
+		key := CreateKey(c.Request.URL.Path)
+		if err := ch.store.Get(key, &repCache); err != nil {
+			if err != persistence.ErrCacheMiss {
+				log.Println(err.Error())
+			}
+			// replace writer
+			writer := newCachedWriter(ch.store, expire, c.Writer, key)
+			c.Writer = writer
+			c.Next()
+		} else {
+			c.Writer.WriteHeader(repCache.Status)
+			for k, vals := range repCache.Header {
+				for _, v := range vals {
+					c.Writer.Header().Set(k, v)
+				}
+			}
+			c.Writer.Write(repCache.Data)
+			c.Abort()
+		}
+	}
+}
+
 func (ch *cache) CachePageWithoutHeader(expire time.Duration) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		var cache responseCache
-		url := c.Request.URL
-		key := CreateKey(url.RequestURI())
-		if err := ch.store.Get(key, &cache); err != nil {
+		var repCache responseCache
+		u := ch.parseUrl(c.Request.URL)
+		key := CreateKey(u.RequestURI())
+		if err := ch.store.Get(key, &repCache); err != nil {
 			if err != persistence.ErrCacheMiss {
 				log.Println(err.Error())
 			}
@@ -262,8 +286,8 @@ func (ch *cache) CachePageWithoutHeader(expire time.Duration) gin.HandlerFunc {
 				ch.store.Delete(key)
 			}
 		} else {
-			c.Writer.WriteHeader(cache.Status)
-			c.Writer.Write(cache.Data)
+			c.Writer.WriteHeader(repCache.Status)
+			c.Writer.Write(repCache.Data)
 			c.Abort()
 		}
 	}

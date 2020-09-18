@@ -290,6 +290,27 @@ func TestRegisterResponseCacheGob(t *testing.T) {
 	assert.Nil(t, err)
 
 }
+
+func TestCacheWithExcludeQueryArgs(t *testing.T) {
+	ch := NewMemoryCache(60 * time.Second)
+
+	ch.SetExcludeQueryArgs("name")
+
+	router := gin.New()
+
+	router.GET("/cache_ping", ch.CachePage(time.Second*3), func(c *gin.Context) {
+		name := c.DefaultQuery("name", "no args")
+		c.String(200, fmt.Sprintf("%s %d", name, time.Now().UnixNano()))
+	})
+
+	w1 := performRequest("GET", "/cache_ping?name=w1", router)
+	w2 := performRequest("GET", "/cache_ping?name=w2", router)
+
+	assert.Equal(t, 200, w1.Code)
+	assert.Equal(t, 200, w2.Code)
+	assert.Equal(t, w1.Body.String(), w2.Body.String())
+}
+
 func performRequest(method, target string, router *gin.Engine) *httptest.ResponseRecorder {
 	r := httptest.NewRequest(method, target, nil)
 	w := httptest.NewRecorder()
