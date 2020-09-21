@@ -15,7 +15,7 @@ type GoRedisStore struct {
 
 // NewRedisCache returns a GoRedisStore
 // until redigo supports sharding/clustering, only one host will be in hostList
-func NewGoRedisCache(host string, password string, defaultExpiration time.Duration) *GoRedisStore {
+func NewGoRedisStore(host string, password string, defaultExpiration time.Duration) *GoRedisStore {
 	addrs := strings.Split(host, ",")
 	cli := redis.NewUniversalClient(&redis.UniversalOptions{
 		Addrs:          addrs,
@@ -36,7 +36,7 @@ func NewGoRedisCache(host string, password string, defaultExpiration time.Durati
 	return &GoRedisStore{cli, defaultExpiration}
 }
 
-func NewGoRedisCacheWithOption(opt *redis.UniversalOptions, defaultExpiration time.Duration) *GoRedisStore {
+func NewGoRedisStoreWithOption(opt *redis.UniversalOptions, defaultExpiration time.Duration) *GoRedisStore {
 	cli := redis.NewUniversalClient(opt)
 	cmd := cli.Ping()
 	if cmd.Err() != nil {
@@ -45,7 +45,7 @@ func NewGoRedisCacheWithOption(opt *redis.UniversalOptions, defaultExpiration ti
 	return &GoRedisStore{cli, defaultExpiration}
 }
 
-func NewGoRedisCacheWithClient(cli redis.UniversalClient, defaultExpiration time.Duration) *GoRedisStore {
+func NewGoRedisStoreWithClient(cli redis.UniversalClient, defaultExpiration time.Duration) *GoRedisStore {
 	return &GoRedisStore{cli, defaultExpiration}
 }
 

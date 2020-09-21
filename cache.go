@@ -66,6 +66,12 @@ func NewRedisCache(host string, password string, defaultExpiration time.Duration
 	return NewCache(store)
 }
 
+func NewGoRedisCache(host string, password string, defaultExpiration time.Duration) *cache {
+	store := persistence.NewGoRedisStore(host, password, defaultExpiration)
+	return NewCache(store)
+}
+
+
 func NewMemcached(hostList []string, defaultExpiration time.Duration) *cache {
 	store := persistence.NewMemcachedStore(hostList, defaultExpiration)
 	return NewCache(store)
