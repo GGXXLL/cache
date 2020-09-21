@@ -169,7 +169,7 @@ func (c *RedisStore) Decrement(key string, delta uint64) (newValue uint64, err e
 	return uint64(tempint), err
 }
 
-// Flush (see CacheStore interface)
+// FlushAll (see CacheStore interface)
 func (c *RedisStore) Flush() error {
 	conn := c.pool.Get()
 	defer conn.Close()
